@@ -69,7 +69,6 @@ sub main {
 
     my %opts = (
         cwd          => '/',
-        # umount       => 0,
         bind         => [],
         robind       => [],
         copy         => [],
@@ -82,7 +81,6 @@ sub main {
     GetOptions(
         \%opts,
         'cwd=s',
-        # 'umount',
         'bind=s',
         'robind=s',
         'copy=s',
@@ -97,13 +95,6 @@ sub main {
     my $rootfs = shift @ARGV;
     my $root = resolve_name($rootfs)
         or die "$rootfs does not exists";
-
-    # if ($opts{umount}) {
-        # my @mp = list_mountpoint($root);
-        # # umount the binds in the deep order.
-        # umount($_) for (sort { $b cmp $a } @mp);
-        # exit 0;
-    # }
 
     die "failed to unshare mount"
         if  syscall(&SYS_unshare, 131072) < 0; # CLONE_NEWNS
@@ -192,29 +183,6 @@ sub mount {
 
     return $dest;
 }
-
-# sub umount {
-    # my $mp = shift;
-    # run_cmd('umount', qw/-l -f -R/, $mp);
-# }
-
-# sub list_mountpoint {
-    # my $root = shift || return;
-
-    # my @list_mp;
-
-    # open my $fh, '<', MOUNTS
-        # or die "faile to open mount table $!";
-    # while (<$fh>) {
-        # my $mp = (split /\s+/, $_)[1]
-            # or next;
-        # push @list_mp, $mp
-            # if ($mp =~ m/^$root/);
-    # }
-    # close $fh;
-
-    # return @list_mp;
-# }
 
 sub make_device {
     my ($name, $type, $major, $minor, @opts) = @_;
@@ -310,12 +278,6 @@ aqr - alternative `docker run`
 default: /
 
 working directory.
-
-=head2 --umount
-
-default: false
-
-DEPRECATED
 
 =head2 --bind src_path[:dest_path]
 
