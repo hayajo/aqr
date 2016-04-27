@@ -262,10 +262,12 @@ aqr - alternative `docker run`
 
 =head1 SYNOPSIS
 
-    $ sudo tar xzf rootfs.tar.gz -C /path/ro/rootfs
+    # create a root filesystem with docker.
+    docker export (docker create alpine hostname) | gzip > rootfs.tar.gz
 
     # execute a command inside the rootfs.
-    aqr /path/to/rootfs -- /bin/bash
+    sudo tar xzf rootfs.tar.gz -C /path/ro/rootfs
+    sudo aqr /path/to/rootfs -- /bin/sh -l
 
 =head1 DESCRIPTION
 
