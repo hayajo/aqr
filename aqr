@@ -17,20 +17,6 @@ our $VERSION = '0.01';
 use constant {
     DEFAULT_CMD => [qw|/bin/sh -l|],
     MOUNTS      => '/proc/mounts',
-    BINDS       => [
-        { src => 'none',     dest => '/proc',     type => 'proc', opts => [] },
-        { src => '/sys',     dest => '/sys',      type => 'none', opts => [qw/rbind/] },
-        { src => '/dev/pts', dest => '/dev/pts',  type => 'none', opts => [qw/bind/] },
-    ],
-    DEVS => [
-        { name => 'null',    type => 'c', major => 1, minor => 3, opts => [qw/--mode=666/] },
-        { name => 'zero',    type => 'c', major => 1, minor => 5, opts => [qw/--mode=666/] },
-        { name => 'full',    type => 'c', major => 1, minor => 7, opts => [qw/--mode=666/] },
-        { name => 'random',  type => 'c', major => 1, minor => 8, opts => [qw/--mode=644/] },
-        { name => 'urandom', type => 'c', major => 1, minor => 9, opts => [qw/--mode=644/] },
-        { name => 'tty',     type => 'c', major => 5, minor => 0, opts => [qw/--mode=666/] },
-        { name => 'ptmx',    type => 'c', major => 5, minor => 2, opts => [qw/--mode=666/] },
-    ],
     COPY_FILES => [
         # '/etc/passwd',
         # '/etc/shadow',
@@ -101,15 +87,12 @@ sub main {
     # syscall(&SYS_mount, '', '/', 0, 262144, 0); # MS_PRIVATE
     run_cmd(qw|mount --make-private /|);
 
-    mount($_->{src}, catdir($root, $_->{dest}), $_->{type}, @{$_->{opts}})
-        for (@{&BINDS});
+    mount($_, catdir($root, $_), 'none', qw/rbind/)
+        for qw|/proc /sys /dev|;
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
         for (map{ extract_names($_) } @{$opts{bind}});
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind ro remount/)
         for (map{ extract_names($_) } @{$opts{robind}});
-
-    make_device(catfile($root, 'dev', $_->{name}), $_->{type}, $_->{major}, $_->{minor}, @{$_->{opts}})
-        for (@{&DEVS});
 
     copy($_, catfile($root, $_))
         for (@{&COPY_FILES});
@@ -182,18 +165,6 @@ sub mount {
     run_cmd(@cmd);
 
     return $dest;
-}
-
-sub make_device {
-    my ($name, $type, $major, $minor, @opts) = @_;
-
-    my $dir = dirname($name);
-    run_cmd(qw/mkdir -p -m 0755/, $dir) unless -e $dir;
-
-    unlink $name if -e $name;
-
-    # CMD: mknod [OPTION]... NAME TYPE MAJOR MINOR
-    run_cmd('mknod', @opts, $name, $type, $major, $minor);
 }
 
 sub copy {
