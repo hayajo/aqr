@@ -60,7 +60,6 @@ sub main {
         copy         => [],
         env          => [],
         user         => 'root',
-        # group        => 'root',
         no_drop_caps => 0,
     );
 
@@ -72,7 +71,6 @@ sub main {
         'copy=s',
         'env=s',
         'user=s',
-        # 'group=s',
         'no-drop-caps',
     ) or exit(1);
 
@@ -281,12 +279,6 @@ set environment variables.
 default: 'root'
 
 usename or UID
-
-=head2 --group name|id
-
-default: 'root'
-
-DEPRECATED
 
 =head2 --no-drop-caps
 
