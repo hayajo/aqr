@@ -80,8 +80,10 @@ sub main {
     my $root = resolve_name($rootfs)
         or die "$rootfs does not exists";
 
+    my $flags = 0x00020000; # CLONE_NEWNS
+
     die "failed to unshare mount"
-        if  syscall(&SYS_unshare, 131072) < 0; # CLONE_NEWNS
+        if  syscall(&SYS_unshare, $flags) < 0;
     # syscall(&SYS_mount, '', '/', 0, 262144, 0); # MS_PRIVATE
     run_cmd(qw|mount --make-private /|);
 
