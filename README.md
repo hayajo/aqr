@@ -25,7 +25,7 @@ dockerを利用して準備します。
 $ docker export $(docker crate alpine cat /etc/alpine-release) | gzip > rootfs-alpine.tar.gz
 ```
 
-`aqr`でコマンドを実行します。
+作成したルートファイルシステムを任意の場所に展開し、`aqr`でコマンドを実行します。
 `aqr`実行環境ではdockerは必要ありません。
 
 ```
