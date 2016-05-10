@@ -122,18 +122,6 @@ sub resolve_name {
     return (-e $abs) ? $abs : undef;
 }
 
-sub extract_names {
-    my $name = shift || return;
-    my ($src, $dest) = split /:/, $name;
-    $dest ||= $src;
-
-    for ($src, $dest) {
-        file_name_is_absolute($_)
-            or die "$_ must be absolute";
-    }
-    return [$src, $dest];
-}
-
 sub run_cmd {
     my @argv = @_;
     system(@argv) == 0
@@ -164,6 +152,18 @@ sub mount {
     run_cmd(@cmd);
 
     return $dest;
+}
+
+sub extract_names {
+    my $name = shift || return;
+    my ($src, $dest) = split /:/, $name;
+    $dest ||= $src;
+
+    for ($src, $dest) {
+        file_name_is_absolute($_)
+            or die "$_ must be absolute";
+    }
+    return [$src, $dest];
 }
 
 sub copy {
