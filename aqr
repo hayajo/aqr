@@ -125,13 +125,6 @@ sub mount {
     run_cmd(qw/mkdir -p -m 0755/, $dest)
         if ! -e $dest;
 
-    opendir my $dh, $dest
-        or die "failed to open $dest: $!";
-    while (my $name = readdir $dh) {
-        return $dest if $name ne '.' && $name ne '..';
-    }
-    close $dh;
-
     # CMD: mount [-t <$type>] [-o <$opts[0],$opts[1],...>] <$src> <$dest>
     my @cmd = qw/mount/;
     push @cmd, '-t', $type
