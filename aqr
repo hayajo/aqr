@@ -191,7 +191,8 @@ sub set_uidgid {
     while (<$fh>) {
         chomp;
         # see: man 5 passwd
-        #  name:password:UID:GID:GECOS:directory:shell
+        # name:password:UID:GID:GECOS:directory:shell
+        #  0      1      2   3    4      5        6
         my ($_name, $_uid, $_gid) = (split /:/, $_)[0, 2, 3];
         if ($user eq $_uid || $user eq $_name) {
             ($uid, $gid) = ($_uid, $_gid);
