@@ -8,7 +8,7 @@ require 'syscall.ph';
 use Errno ();
 use File::Basename qw/dirname/;
 use File::Spec::Functions qw/catfile catdir rel2abs file_name_is_absolute/;
-use Getopt::Long;
+use Getopt::Long qw/:config no_ignore_case bundling/;
 use POSIX;
 use Pod::Usage qw/pod2usage/;
 
@@ -53,7 +53,7 @@ sub main {
     die basename($0) . ' should be run as root'
         if $< != 0;
 
-    my %opts = (
+    my $opts = {
         cwd          => '/',
         bind         => [],
         robind       => [],
@@ -61,17 +61,16 @@ sub main {
         env          => [],
         user         => 'root',
         no_drop_caps => 0,
-    );
+    };
 
     GetOptions(
-        \%opts,
-        'cwd=s',
-        'bind=s',
-        'robind=s',
-        'copy=s',
-        'env=s',
-        'user=s',
-        'no-drop-caps',
+        'cwd=s'        => \$opts->{cwd},
+        'bind=s@'      => \$opts->{bind},
+        'robind=s@'    => \$opts->{robind},
+        'copy=s@'      => \$opts->{copy},
+        'env=s@'       => \$opts->{env},
+        'user=s'       => \$opts->{user},
+        'no-drop-caps' => \$opts->{no_drop_caps},
     ) or exit(1);
 
     pod2usage(1) if (!@ARGV);
@@ -90,26 +89,26 @@ sub main {
     mount($_, catdir($root, $_), 'none', qw/rbind/)
         for qw|/proc /sys /dev|;
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
-        for (map{ extract_names($_) } @{$opts{bind}});
+        for (map{ extract_names($_) } @{$opts->{bind}});
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind ro remount/)
-        for (map{ extract_names($_) } @{$opts{robind}});
+        for (map{ extract_names($_) } @{$opts->{robind}});
 
     copy($_, catfile($root, $_))
         for (@{&COPY_FILES});
     copy($_->[0], catfile($root, $_->[1]))
-        for (map { extract_names($_) } @{$opts{copy}});
+        for (map { extract_names($_) } @{$opts->{copy}});
 
     chroot $root
         or die "failed to chroot to $root: $!";
-    chdir $opts{cwd}
-        or die "failed to chdir to $opts{cwd}: $!";
+    chdir $opts->{cwd}
+        or die "failed to chdir to $opts->{cwd}: $!";
 
     drop_caps()
-        if ! $opts{no_drop_caps};
+        if ! $opts->{no_drop_caps};
 
-    set_uidgid($opts{user});
+    set_uidgid($opts->{user});
 
-    set_env(@{$opts{env}});
+    set_env(@{$opts->{env}});
 
     my @cmd = (@ARGV) ? @ARGV : @{&DEFAULT_CMD};
     exec @cmd;
