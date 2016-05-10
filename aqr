@@ -5,9 +5,10 @@ use warnings;
 
 require 'syscall.ph';
 
+use Cwd qw/abs_path/;
 use Errno ();
 use File::Basename qw/dirname/;
-use File::Spec::Functions qw/catfile catdir rel2abs file_name_is_absolute/;
+use File::Spec::Functions qw/catfile catdir file_name_is_absolute/;
 use Getopt::Long qw/:config no_ignore_case bundling/;
 use POSIX;
 use Pod::Usage qw/pod2usage/;
@@ -76,11 +77,11 @@ sub main {
     pod2usage(1) if (!@ARGV);
 
     my $rootfs = shift @ARGV;
-    my $root = resolve_name($rootfs)
-        or die "$rootfs does not exists";
+    my $root = abs_path($rootfs);
+    die "$rootfs does not exists"
+        if !$root || ! -e $root;
 
     my $flags = 0x00020000; # CLONE_NEWNS
-
     die "failed to unshare mount"
         if  syscall(&SYS_unshare, $flags) < 0;
 
@@ -118,18 +119,6 @@ sub main {
     die "failed to exec $cmd[0]: $!";
 }
 
-sub resolve_name {
-    my $name = shift || return;
-    my $abs = rel2abs( (-l $name) ? readlink $name : $name );
-    return (-e $abs) ? $abs : undef;
-}
-
-sub run_cmd {
-    my @argv = @_;
-    system(@argv) == 0
-        or die "failed to exec $argv[0]: $!";
-}
-
 sub mount {
     my ($src, $dest, $type, @opts) = @_;
 
@@ -154,6 +143,12 @@ sub mount {
     run_cmd(@cmd);
 
     return $dest;
+}
+
+sub run_cmd {
+    my @argv = @_;
+    system(@argv) == 0
+        or die "failed to exec $argv[0]: $!";
 }
 
 sub extract_names {
