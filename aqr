@@ -65,12 +65,12 @@ sub main {
     };
 
     GetOptions(
-        'cwd=s'        => \$opts->{cwd},
-        'bind=s@'      => \$opts->{bind},
-        'robind=s@'    => \$opts->{robind},
-        'copy=s@'      => \$opts->{copy},
-        'env=s@'       => \$opts->{env},
-        'user=s'       => \$opts->{user},
+        'cwd|w=s'      => \$opts->{cwd},
+        'bind|b=s@'    => \$opts->{bind},
+        'robind|r=s@'  => \$opts->{robind},
+        'copy|c=s@'    => \$opts->{copy},
+        'env|e=s@'     => \$opts->{env},
+        'user|u=s'     => \$opts->{user},
         'no-drop-caps' => \$opts->{no_drop_caps},
     ) or exit(1);
 
@@ -236,37 +236,37 @@ aqr - alternative `docker run`
 
 =head1 OPTIONS
 
-=head2 --cwd
+=head2 -w, --cwd
 
 default: /
 
 working directory.
 
-=head2 --bind src_path[:dest_path]
+=head2 -b, --bind src_path[:dest_path]
 
 default: []
 
 mount src_path of host to dest_path of the rootfs.
 
-=head2 --robind src_path[:dest_path]
+=head2 -r, --robind src_path[:dest_path]
 
 default: []
 
 mount read-only src_path of host to dest_path of the rootfs.
 
-=head2 --copy src_path[:dest_path]
+=head2 -c, --copy src_path[:dest_path]
 
 default: []
 
 copy src_path of host to dest_path of the rootfs.
 
-=head2 --env var=val
+=head2 -e, --env var=val
 
 default: []
 
 set environment variables.
 
-=head2 --user name|id
+=head2 -u, --user name|id
 
 default: 'root'
 
