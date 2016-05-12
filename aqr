@@ -203,12 +203,12 @@ sub drop_caps {
         last if syscall(&SYS_prctl, 23, $i) < 0; # PR_CAPBSET_READ
 
         if (syscall(&SYS_prctl, 24, $i) < 0) { # PR_CAPBSET_DROP
-            warn "failed to drop capability:$i";
+            warn "failed to drop capability: $i";
         }
     }
 
     # we should at least succeed in dropping _some_ capabilities
-    die "failed to drop capabilities:$!"
+    die "failed to drop capabilities: $!"
         if $i == 0;
 }
 
@@ -231,7 +231,7 @@ sub set_uidgid {
         }
     }
 
-    die "invalid user '$user'" if ! defined $uid;
+    die "unable find user '$user'" if ! defined $uid;
 
     # NOTICE: must set GID before set UID.
     POSIX::setgid($gid);
