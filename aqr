@@ -7,7 +7,7 @@ require 'syscall.ph';
 
 use Cwd qw/abs_path/;
 use Errno ();
-use File::Basename qw/dirname/;
+use File::Basename qw/basename dirname/;
 use File::Spec::Functions qw/catfile catdir file_name_is_absolute/;
 use Getopt::Long qw/:config no_ignore_case bundling/;
 use POSIX;
@@ -17,7 +17,6 @@ our $VERSION = '0.01';
 
 use constant {
     DEFAULT_CMD => [qw|/bin/sh -l|],
-    MOUNTS      => '/proc/mounts',
     COPY_FILES => [
         # '/etc/passwd',
         # '/etc/shadow',
