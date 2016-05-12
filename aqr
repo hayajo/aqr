@@ -101,12 +101,12 @@ sub main {
         for (map{ extract_names($_) } @{$opts->{robind}});
 
     copy($_, catfile($root, $_))
-        for (
-            @{&COPY_FILES},
-            ($opts->{copy_user_database} ? @{&USER_DATABASES} : ())
-        );
+        for (@{&COPY_FILES});
     copy($_->[0], catfile($root, $_->[1]))
         for (map { extract_names($_) } @{$opts->{copy}});
+
+    copy_user_database($root)
+        if $opts->{copy_user_database};
 
     chroot $root
         or die "failed to chroot to $root: $!";
@@ -166,6 +166,31 @@ sub extract_names {
 sub copy {
     my ($src, $dest) = @_;
     run_cmd('cp', '-pH', $src, $dest); # follow symlink
+}
+
+sub copy_user_database {
+    my $root = shift || return;
+
+    copy($_, catfile($root, $_))
+        for (@{&USER_DATABASES});
+
+    # mask password
+    for my $shadow (qw|/etc/shadow /etc/gshadow|) {
+        my $shadow = catfile($root, $shadow);
+
+        open my $rfh, '<', $shadow
+            or die "failed to open $shadow: $!";
+        my @lines = <$rfh>;
+        close $rfh;
+
+        open my $wfh, '>', $shadow
+            or die "failed to open $shadow: $!";
+        for my $line (@lines) {
+            $line =~ s/\A([^:]+):[^*!:]+:/$1:*:/;
+            print $wfh $line;
+        }
+        close $wfh;
+    }
 }
 
 sub drop_caps {
