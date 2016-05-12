@@ -75,6 +75,7 @@ sub main {
         'user|u=s'           => \$opts->{user},
         'no-drop-caps'       => \$opts->{no_drop_caps},
         'copy-user-database' => \$opts->{copy_user_database},
+        'h|help'             => sub { pod2usage(0) },
     ) or exit(1);
 
     pod2usage(1) if (!@ARGV);
