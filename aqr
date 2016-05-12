@@ -16,12 +16,8 @@ use Pod::Usage qw/pod2usage/;
 our $VERSION = '0.01';
 
 use constant {
-    DEFAULT_CMD => [qw|/bin/sh -l|],
-    COPY_FILES => [
-        # '/etc/passwd',
-        # '/etc/shadow',
-        # '/etc/group',
-        # '/etc/gshadow',
+    DEFAULT_CMD    => [qw|/bin/sh -l|],
+    COPY_FILES     => [
         # '/etc/services',
         # '/etc/protocols',
         '/etc/networks',
@@ -30,7 +26,13 @@ use constant {
         '/etc/localtime',
         '/etc/resolv.conf',
     ],
-    KEEP_CAPS => [
+    USER_DATABASES => [
+        '/etc/passwd',
+        '/etc/shadow',
+        '/etc/group',
+        '/etc/gshadow',
+    ],
+    KEEP_CAPS      => [
         0,  # CAP_CHOWN
         1,  # CAP_DAC_OVERRIDE
         2,  # CAP_DAC_READ_SEARCH
@@ -54,23 +56,25 @@ sub main {
         if $< != 0;
 
     my $opts = {
-        cwd          => '/',
-        bind         => [],
-        robind       => [],
-        copy         => [],
-        env          => [],
-        user         => 'root',
-        no_drop_caps => 0,
+        cwd                => '/',
+        bind               => [],
+        robind             => [],
+        copy               => [],
+        env                => [],
+        user               => 'root',
+        no_drop_caps       => 0,
+        copy_user_database => 0,
     };
 
     GetOptions(
-        'cwd|w=s'      => \$opts->{cwd},
-        'bind|b=s@'    => \$opts->{bind},
-        'robind|r=s@'  => \$opts->{robind},
-        'copy|c=s@'    => \$opts->{copy},
-        'env|e=s@'     => \$opts->{env},
-        'user|u=s'     => \$opts->{user},
-        'no-drop-caps' => \$opts->{no_drop_caps},
+        'cwd|w=s'            => \$opts->{cwd},
+        'bind|b=s@'          => \$opts->{bind},
+        'robind|r=s@'        => \$opts->{robind},
+        'copy|c=s@'          => \$opts->{copy},
+        'env|e=s@'           => \$opts->{env},
+        'user|u=s'           => \$opts->{user},
+        'no-drop-caps'       => \$opts->{no_drop_caps},
+        'copy-user-database' => \$opts->{copy_user_database},
     ) or exit(1);
 
     pod2usage(1) if (!@ARGV);
@@ -96,7 +100,10 @@ sub main {
         for (map{ extract_names($_) } @{$opts->{robind}});
 
     copy($_, catfile($root, $_))
-        for (@{&COPY_FILES});
+        for (
+            @{&COPY_FILES},
+            ($opts->{copy_user_database} ? @{&USER_DATABASES} : ())
+        );
     copy($_->[0], catfile($root, $_->[1]))
         for (map { extract_names($_) } @{$opts->{copy}});
 
@@ -276,6 +283,12 @@ usename or UID
 default: false
 
 give extended privileges to this container.
+
+=head2 --copy-user-database
+
+default: false
+
+copy '/etc/passwd', '/etc/shadow', '/etc/group', '/etc/gshadow' to container.
 
 =head1 AUTHOR
 
