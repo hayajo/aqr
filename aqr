@@ -67,12 +67,12 @@ sub main {
     };
 
     GetOptions(
-        'cwd|w=s'            => \$opts->{cwd},
-        'bind|b=s@'          => \$opts->{bind},
-        'robind|r=s@'        => \$opts->{robind},
-        'copy|c=s@'          => \$opts->{copy},
-        'env|e=s@'           => \$opts->{env},
-        'user|u=s'           => \$opts->{user},
+        'w|cwd=s'            => \$opts->{cwd},
+        'b|bind=s@'          => \$opts->{bind},
+        'r|robind=s@'        => \$opts->{robind},
+        'c|copy=s@'          => \$opts->{copy},
+        'e|env=s@'           => \$opts->{env},
+        'u|user=s'           => \$opts->{user},
         'no-drop-caps'       => \$opts->{no_drop_caps},
         'copy-user-database' => \$opts->{copy_user_database},
         'h|help'             => sub { pod2usage(0) },
