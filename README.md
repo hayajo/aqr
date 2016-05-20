@@ -25,20 +25,20 @@ dockerを利用して準備します。
 $ docker export $(docker crate alpine cat /etc/alpine-release) | gzip > rootfs-alpine.tar.gz
 ```
 
-作成したルートファイルシステムを任意の場所に展開し、`aqr`でコマンドを実行します。
-`aqr`実行環境ではdockerは必要ありません。
+作成したルートファイルシステムを任意の場所に展開し、`aqr run`でコマンドを実行します。
+`aqr run`実行環境ではdockerは必要ありません。
 
 ```
 $ sudo tar xzf rootfs-alpine.tar.gz -C /path/to/rootfs
-$ sudo aqr /path/to/rootfs -- /bin/sh -l
+$ sudo aqr run /path/to/rootfs -- /bin/sh -l
 ```
 
 インストール
 ------------
 
 ```
-$ sudo curl -L https://raw.githubusercontent.com/hayajo/aqr/master/aqr -o /usr/local/sbin/aqr
-$ sudo chmod +x /usr/local/sbin/aqr
+$ git clone https://github.com/hayajo/aqr.git
+$ sudo cp aqr/aqr* /usr/local/sbin
 ```
 
 Vagrantを使った検証手順
@@ -77,10 +77,10 @@ production$ sudo ln -s /var/container/alpine/3.3 /var/container/alpine/rootfs
 production$ sudo tar xzfv /vagrant/alpine-3.3.tar.gz -C /var/container/alpine/3.3
 ```
 
-展開したディレクトリを指定して`aqr`コマンドを実行します。
+展開したディレクトリを指定して`aqr run`コマンドを実行します。
 
 ```
-production$ sudo perl /vagrant/aqr /var/container/alpine/rootfs -- /bin/sh -l
+production$ sudo perl /vagrant/aqr run /var/container/alpine/rootfs -- /bin/sh -l
 production:/# apk update && apk add perl && perl -v
 production:/# exit
 ```
