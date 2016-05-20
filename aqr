@@ -3,245 +3,82 @@
 use strict;
 use warnings;
 
-require 'syscall.ph';
-
-use Cwd qw/abs_path/;
-use Errno ();
-use File::Basename qw/basename dirname/;
-use File::Spec::Functions qw/catfile catdir file_name_is_absolute/;
-use Getopt::Long qw/:config no_ignore_case bundling/;
-use POSIX;
+use File::Basename qw/dirname basename/;
+use File::Spec::Functions qw/catfile rel2abs/;
+use Getopt::Long qw/:config require_order no_ignore_case bundling/;
 use Pod::Usage qw/pod2usage/;
 
-our $VERSION = '0.01';
-
 use constant {
-    DEFAULT_CMD    => [qw|/bin/sh -l|],
-    COPY_FILES     => [
-        # '/etc/services',
-        # '/etc/protocols',
-        '/etc/networks',
-        '/etc/hosts',
-        '/etc/hostname',
-        '/etc/localtime',
-        '/etc/resolv.conf',
-    ],
-    USER_DATABASES => [
-        '/etc/passwd',
-        '/etc/shadow',
-        '/etc/group',
-        '/etc/gshadow',
-    ],
-    KEEP_CAPS      => [
-        0,  # CAP_CHOWN
-        1,  # CAP_DAC_OVERRIDE
-        2,  # CAP_DAC_READ_SEARCH
-        3,  # CAP_FOWNER
-        4,  # CAP_FSETID
-        5,  # CAP_KILL
-        6,  # CAP_SETGID
-        7,  # CAP_SETUID
-        8,  # CAP_SETPCAP
-        10, # CAP_NET_BIND_SERVICE
-        13, # CAP_NET_RAW
-        18, # CAP_SYS_CHROOT
-        27, # CAP_MKNOD
-        29, # CAP_AUDIT_WRITE
-        31, # CAP_SETFCAP
-    ],
+    PREFIX => 'aqr-',
+    MOUNTS => '/proc/mounts',
 };
 
 sub main {
-    my $opts = {
-        cwd                => '/',
-        bind               => [],
-        robind             => [],
-        copy               => [],
-        env                => [],
-        user               => 'root',
-        no_drop_caps       => 0,
-        copy_user_database => 0,
-    };
-
     GetOptions(
-        'w|cwd=s'            => \$opts->{cwd},
-        'b|bind=s@'          => \$opts->{bind},
-        'r|robind=s@'        => \$opts->{robind},
-        'c|copy=s@'          => \$opts->{copy},
-        'e|env=s@'           => \$opts->{env},
-        'u|user=s'           => \$opts->{user},
-        'no-drop-caps'       => \$opts->{no_drop_caps},
-        'copy-user-database' => \$opts->{copy_user_database},
-        'h|help'             => sub { pod2usage(0) },
-    ) or exit(1);
+        'h|help' => sub { pod2usage(0) },
+        'list'   => sub {
+            my @subcmds = list_subcmd();
+            if (@subcmds) {
+                my $prefix = PREFIX;
+                print
+                    join("\n", map { (my $n = basename($_)) =~ s/^$prefix//; $n } @subcmds),
+                    "\n";
+            }
+            else {
+                print "no command\n";
+            }
+            exit;
+        },
+    ) or pod2usage(1);
 
-    die basename($0) . ' should be run as root'
-        if $< != 0;
+    my $cmd = shift @ARGV || pod2usage(0);
+    my $subcmd = lookup_subcmd($cmd)
+        or die "$cmd is not aqr command";
 
-    pod2usage(1) if (!@ARGV);
+    $ENV{AQR_PREFIX}  = PREFIX;
+    $ENV{AQR_CGROOT} = lookup_cgroot()
+        or die "cgroup hierarchy nonexistent";
 
-    my $rootfs = shift @ARGV;
-    my $root = abs_path($rootfs);
-    die "$rootfs does not exists"
-        if !$root || ! -e $root;
-
-    my $flags = 0x00020000; # CLONE_NEWNS
-    die "failed to unshare mount"
-        if  syscall(&SYS_unshare, $flags) < 0;
-
-    # run_cmd(qw|mount --make-private /|); 
-    die "failed to private mount"
-        if syscall(&SYS_mount, my $s = 'none', my $t = '/', 0, 1 << 18, 0) < 0; # MS_PRIVATE
-
-    mount($_, catdir($root, $_), 'none', qw/rbind/)
-        for qw|/proc /sys /dev|;
-    mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
-        for (map{ extract_names($_) } @{$opts->{bind}});
-    mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind ro remount/)
-        for (map{ extract_names($_) } @{$opts->{robind}});
-
-    copy($_, catfile($root, $_))
-        for (@{&COPY_FILES});
-    copy($_->[0], catfile($root, $_->[1]))
-        for (map { extract_names($_) } @{$opts->{copy}});
-
-    copy_user_database($root)
-        if $opts->{copy_user_database};
-
-    chroot $root
-        or die "failed to chroot to $root: $!";
-    chdir $opts->{cwd}
-        or die "failed to chdir to $opts->{cwd}: $!";
-
-    drop_caps()
-        if ! $opts->{no_drop_caps};
-
-    set_uidgid($opts->{user});
-
-    set_env(@{$opts->{env}});
-
-    my @cmd = (@ARGV) ? @ARGV : @{&DEFAULT_CMD};
-    exec @cmd;
-
-    die "failed to exec $cmd[0]: $!";
+    exec $subcmd, @ARGV;
 }
 
-sub mount {
-    my ($src, $dest, $type, @opts) = @_;
-
-    run_cmd(qw/mkdir -p -m 0755/, $dest)
-        if ! -e $dest;
-
-    # CMD: mount [-t <$type>] [-o <$opts[0],$opts[1],...>] <$src> <$dest>
-    my @cmd = qw/mount/;
-    push @cmd, '-t', $type
-        if $type;
-    push @cmd, '-o', join ',', @opts
-        if @opts;
-    push @cmd, $src, $dest;
-
-    run_cmd(@cmd);
-
-    return $dest;
-}
-
-sub run_cmd {
-    my @argv = @_;
-    system(@argv) == 0
-        or die "failed to exec $argv[0]: $!";
-}
-
-sub extract_names {
-    my $name = shift || return;
-    my ($src, $dest) = split /:/, $name;
-    $dest ||= $src;
-
-    for ($src, $dest) {
-        file_name_is_absolute($_)
-            or die "$_ must be absolute";
+sub lookup_subcmd {
+    my $cmd = shift || return;
+    my $subcmd = PREFIX . $cmd;
+    for my $name (list_subcmd()) {
+        return $name
+            if basename($name) =~ m/$subcmd/;
     }
-    return [$src, $dest];
 }
 
-sub copy {
-    my ($src, $dest) = @_;
-    run_cmd('cp', '-pH', $src, $dest); # follow symlink
-}
-
-sub copy_user_database {
-    my $root = shift || return;
-
-    copy($_, catfile($root, $_))
-        for (@{&USER_DATABASES});
-
-    # mask password
-    for my $shadow (qw|/etc/shadow /etc/gshadow|) {
-        my $shadow = catfile($root, $shadow);
-
-        open my $rfh, '<', $shadow
-            or die "failed to open $shadow: $!";
-        my @lines = <$rfh>;
-        close $rfh;
-
-        open my $wfh, '>', $shadow
-            or die "failed to open $shadow: $!";
-        for my $line (@lines) {
-            $line =~ s/\A([^:]+):[^*!:]+:/$1:*:/;
-            print $wfh $line;
+sub list_subcmd {
+    my @subcmds;
+    my $prefix = PREFIX;
+    my $regex  = qr/^$prefix/;
+    for my $dir (dirname($0), split(/:/, $ENV{PATH})) {
+        opendir my $dh, $dir
+            or next;
+        for my $name (map { rel2abs(catfile($dir, $_)) } readdir $dh) {
+            push @subcmds, $name
+                if basename($name) =~ $regex && -f $name && -x $name;
         }
-        close $wfh;
+        close $dh;
     }
+    return @subcmds;
 }
 
-sub drop_caps {
-    my %keep_caps = map { $_ => 1 } @{&KEEP_CAPS};
+sub lookup_cgroot {
+    open my $fh, '<', MOUNTS;
+    my @mounts = <$fh>;
+    close $fh;
 
-    my $i;
-    for ($i = 0; ; ++$i) {
-        next if $keep_caps{$i};
-
-        last if syscall(&SYS_prctl, 23, $i) < 0; # PR_CAPBSET_READ
-
-        if (syscall(&SYS_prctl, 24, $i) < 0) { # PR_CAPBSET_DROP
-            warn "failed to drop capability: $i";
-        }
-    }
-
-    # we should at least succeed in dropping _some_ capabilities
-    die "failed to drop capabilities: $!"
-        if $i == 0;
-}
-
-sub set_uidgid {
-    my $user = shift || return;
-
-    open my $fh, '<', '/etc/passwd'
-        or die "failed to open /etc/passwd: $!";
-
-    my ($uid, $gid);
-
-    while (<$fh>) {
-        chomp;
-        # see: man 5 passwd
-        # name:password:UID:GID:GECOS:directory:shell
-        #  0      1      2   3    4      5        6
-        my ($_name, $_uid, $_gid) = (split /:/, $_)[0, 2, 3];
-        if ($user eq $_uid || $user eq $_name) {
-            ($uid, $gid) = ($_uid, $_gid);
-        }
-    }
-
-    die "unable find user '$user'" if ! defined $uid;
-
-    # NOTICE: must set GID before set UID.
-    POSIX::setgid($gid);
-    POSIX::setuid($uid);
-}
-
-sub set_env {
-    for (@_) {
-        my ($var, $val) = split /=/, $_;
-        $ENV{$var} = $val;
+    for my $m (@mounts) {
+      # see `man 5 fstab`.
+      # fs_spec fs_file fs_vfstype fs_mntops fs_freq fs_passno
+      #    0        1        2          3       4        5
+      my($file, $vfstype) = (split / /, $m)[1, 2];
+      return dirname($file)
+        if $vfstype eq 'cgroup';
     }
 }
 
@@ -251,88 +88,40 @@ __END__
 
 =head1 NAME
 
-aqr - alternative `docker run`
+aqr - easy container runtime
 
 =head1 SYNOPSIS
 
     # create a root filesystem with docker.
     docker export (docker create alpine hostname) | gzip > rootfs.tar.gz
 
-    # execute a command inside the rootfs.
+    # run a command inside the rootfs.
     sudo tar xzf rootfs.tar.gz -C /path/ro/rootfs
-    sudo aqr /path/to/rootfs -- /bin/sh -l
+    sudo aqr run /path/to/rootfs -- /bin/sh -l
+
+    # list aqr containers
+    sudo aqr list
+
+    # cleanup cgroups
+    sudo aqr clean
 
 =head1 DESCRIPTION
 
-`aqr` is a easy container to run with chroot instead of `docker run`.
+`aqr` is a command line client for running applications packaged according to
+`docker export`.
 
 =head1 OPTIONS
 
-=head2 -w, --cwd
+=head2  --list
 
-default: /
+list available subcommands.
 
-working directory.
+=head2 -h, --help
 
-=head2 -b, --bind src_path[:dest_path]
-
-default: []
-
-mount src_path of host to dest_path of the rootfs.
-
-=head2 -r, --robind src_path[:dest_path]
-
-default: []
-
-mount read-only src_path of host to dest_path of the rootfs.
-
-=head2 -c, --copy src_path[:dest_path]
-
-default: []
-
-copy src_path of host to dest_path of the rootfs.
-
-=head2 -e, --env var=val
-
-default: []
-
-set environment variables.
-
-=head2 -u, --user name|id
-
-default: 'root'
-
-usename or UID
-
-=head2 --no-drop-caps
-
-default: false
-
-give extended privileges to this container.
-
-=head2 --copy-user-database
-
-default: false
-
-copy '/etc/passwd', '/etc/shadow', '/etc/group', '/etc/gshadow' to container.
-
-=head1 AUTHOR
-
-hayajo E<lt>hayajo@cpan.orgE<gt>
-
-=head1 SEE ALSO
-
-L<https://github.com/yuuki/droot>
-L<https://github.com/kazuho/jailing>
-L<https://github.com/opencontainers/runc>
-L<https://github.com/opencontainers/runc/blob/master/libcontainer/SPEC.md>
-
-=head1 LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
+show help.
 
 =cut
 
 # -*- mode: perl -*-
 # vi: set ft=perl :
+

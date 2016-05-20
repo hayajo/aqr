@@ -2,12 +2,11 @@
 # vi: set ft=ruby :
 
 Vagrant.configure(2) do |config|
-  config.vm.box = "boxcutter/centos72"
+  config.vm.define "docker" do |host|
+    host.vm.box = "boxcutter/centos72"
+    host.vm.hostname = "docker"
 
-  config.vm.define "development" do |development|
-    development.vm.hostname = "development"
-
-    development.vm.provision "shell", inline: <<-SHELL
+    host.vm.provision "shell", inline: <<-SHELL
       sudo yum install -y epel-release
 
       # dockerをインストール
@@ -23,12 +22,17 @@ Vagrant.configure(2) do |config|
     SHELL
   end
 
-  config.vm.define "production" do |production|
-    production.vm.hostname = "production"
+  config.vm.define "centos" do |host|
+    host.vm.box = "boxcutter/centos72"
+    host.vm.hostname = "centos"
 
-    production.vm.provision "shell", inline: <<-SHELL
+    host.vm.provision "shell", inline: <<-SHELL
       sudo yum install -y perl perl-core
     SHELL
   end
 
+  config.vm.define "ubuntu" do |host|
+    host.vm.box = "boxcutter/ubuntu1604"
+    host.vm.hostname = "ubuntu"
+  end
 end

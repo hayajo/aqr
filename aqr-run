@@ -1,0 +1,469 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+require 'syscall.ph';
+
+use Cwd qw/abs_path/;
+use Errno ();
+use File::Basename qw/basename dirname/;
+use File::Spec::Functions qw/catfile catdir file_name_is_absolute/;
+use Getopt::Long qw/:config no_ignore_case bundling/;
+use POSIX;
+use Pod::Usage qw/pod2usage/;
+
+our $VERSION = '0.01';
+
+use constant {
+    DEFAULT_CMD    => [qw|/bin/sh -l|],
+    COPY_FILES     => [
+        # '/etc/services',
+        # '/etc/protocols',
+        '/etc/networks',
+        '/etc/hosts',
+        # '/etc/hostname',
+        '/etc/localtime',
+        '/etc/resolv.conf',
+    ],
+    USER_DATABASES => [
+        '/etc/passwd',
+        '/etc/shadow',
+        '/etc/group',
+        '/etc/gshadow',
+    ],
+    KEEP_CAPS      => [
+        0,  # CAP_CHOWN
+        1,  # CAP_DAC_OVERRIDE
+        2,  # CAP_DAC_READ_SEARCH
+        3,  # CAP_FOWNER
+        4,  # CAP_FSETID
+        5,  # CAP_KILL
+        6,  # CAP_SETGID
+        7,  # CAP_SETUID
+        8,  # CAP_SETPCAP
+        10, # CAP_NET_BIND_SERVICE
+        13, # CAP_NET_RAW
+        18, # CAP_SYS_CHROOT
+        27, # CAP_MKNOD
+        29, # CAP_AUDIT_WRITE
+        31, # CAP_SETFCAP
+    ],
+    CGPREFIX => 'aqr-',
+    CGROOT   => '/sys/fs/cgroup',
+};
+
+sub main {
+    my $opts = {
+        cwd                => '/',
+        bind               => [],
+        robind             => [],
+        copy               => [],
+        env                => [],
+        user               => 'root',
+        cpu_shares         => 1024,
+        memory_limit       => -1,
+        device_read_bps    => [],
+        device_write_bps   => [],
+        no_drop_caps       => 0,
+        copy_user_database => 0,
+    };
+
+    GetOptions(
+        'w|cwd=s'               => \$opts->{cwd},
+        'b|bind=s@'             => \$opts->{bind},
+        'r|robind=s@'           => \$opts->{robind},
+        'c|copy=s@'             => \$opts->{copy},
+        'e|env=s@'              => \$opts->{env},
+        'u|user=s'              => \$opts->{user},
+        'C|cpu-shares=i'        => \$opts->{cpu_shares},
+        'M|memory=s'            => \$opts->{memory_limit},
+        'R|device-read-bps=s@'  => \$opts->{device_read_bps},
+        'W|device-write-bps=s@' => \$opts->{device_write_bps},
+        'no-drop-caps'          => \$opts->{no_drop_caps},
+        'copy-user-database'    => \$opts->{copy_user_database},
+        'h|help'                => sub { pod2usage(0) },
+    ) or exit(1);
+
+    die basename($0) . ' should be run as root'
+        if $< != 0;
+
+    pod2usage(1) if (!@ARGV);
+
+    my $rootfs = shift @ARGV;
+    my $root = abs_path($rootfs);
+    die "$rootfs does not exists"
+        if !$root || ! -e $root;
+
+    my $flags = 0x00020000; # CLONE_NEWNS
+    die "failed to unshare mount"
+        if  syscall(&SYS_unshare, $flags) < 0;
+
+    # cgroup
+    my $cgroot   = $ENV{AQR_CG_ROOT} || CGROOT;
+    my $cgprefix = $ENV{AQR_PREFIX}  || CGPREFIX;
+    my $cgname   = $cgprefix . $$;
+    cg_cpu($cgroot, $cgname, $opts->{cpu_shares});
+    cg_memory($cgroot, $cgname, $opts->{memory_limit});
+    cg_blkio($cgroot, $cgname, $opts->{device_read_bps}, $opts->{device_write_bps});
+
+    # run_cmd(qw|mount --make-private /|); 
+    die "failed to private mount"
+        if syscall(&SYS_mount, my $s = 'none', my $t = '/', 0, 1 << 18, 0) < 0; # MS_PRIVATE
+
+    mount($_, catdir($root, $_), 'none', qw/rbind/)
+        for qw|/proc /sys /dev|;
+    mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
+        for (map{ extract_names($_) } @{$opts->{bind}});
+    mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind ro remount/)
+        for (map{ extract_names($_) } @{$opts->{robind}});
+
+    copy($_, catfile($root, $_))
+        for (@{&COPY_FILES});
+    copy($_->[0], catfile($root, $_->[1]))
+        for (map { extract_names($_) } @{$opts->{copy}});
+
+    copy_user_database($root)
+        if $opts->{copy_user_database};
+
+    chroot $root
+        or die "failed to chroot to $root: $!";
+    chdir $opts->{cwd}
+        or die "failed to chdir to $opts->{cwd}: $!";
+
+    drop_caps()
+        if ! $opts->{no_drop_caps};
+
+    set_uidgid($opts->{user});
+
+    set_env(@{$opts->{env}});
+
+    my @cmd = (@ARGV) ? @ARGV : @{&DEFAULT_CMD};
+    exec @cmd;
+
+    die "failed to exec $cmd[0]: $!";
+}
+
+sub cg_cpu {
+    my ($cgroot, $cgname, $val) = @_;
+    write_cg_limit(
+        $cgroot,
+        $cgname,
+        'cpu',
+        'cpu.shares' => $val,
+    );
+}
+
+sub write_cg_limit {
+    my ($cgroot, $cgname, $subsys, %values) = @_;
+
+    my $group = catdir($cgroot, $subsys, $cgname);
+    my $tasks = catfile($group, 'tasks');
+
+    if (-d $group) {
+        die "Device or resource busy"
+            if ! -z $tasks;
+        rmdir $group
+            or die "failed to rmdir $group: $!";
+    }
+
+    mkdir $group
+        or die "failed to mkdir $group: $!";
+
+    open my $fh, '>', $tasks
+        or die "failed to open $tasks: $!";
+    print $fh $$;
+    close $fh;
+
+    for my $param (keys %values) {
+        next if ! defined $values{$param};
+        open my $param_fh, '>', catfile($group, $param)
+            or die "failed to open $param: $!";
+        print $param_fh $values{$param};
+        close $param_fh;
+    }
+}
+
+sub cg_memory {
+    my ($cgroot, $cgname, $val) = @_;
+    write_cg_limit(
+        $cgroot,
+        $cgname,
+        'memory',
+        'memory.limit_in_bytes' => $val,
+    );
+}
+
+sub cg_blkio {
+    my ($cgroot, $cgname, $read, $write) = @_;
+    write_cg_limit(
+        $cgroot,
+        $cgname,
+        'blkio',
+        'blkio.throttle.read_bps_device'
+            => join("\n", map { opt2cgblk($_) } @$read),
+        'blkio.throttle.write_bps_device'
+            => join("\n", map { opt2cgblk($_) } @$write),
+    );
+}
+
+sub opt2cgblk {
+    my $opt = shift;
+    my ($dev, $limit) = split /:/, $opt;
+    my $rdev = (stat $dev)[6]
+        or die "failed to stat $dev: $!";
+    return sprintf("%d:%d %s\n", major_minor($rdev), $limit);
+}
+
+sub major_minor {
+    my $rdev = shift || return;
+    # see http://www.makelinux.net/ldd3/chp-3-sect-2
+    my $major = ($rdev >> 8) & 0xfff;
+    my $minor = ($rdev & 0xff) | (($rdev >> 12) & 0xfff00);
+    return ($major, $minor);
+}
+
+sub mount {
+    my ($src, $dest, $type, @opts) = @_;
+
+    run_cmd(qw/mkdir -p -m 0755/, $dest)
+        if ! -e $dest;
+
+    # CMD: mount [-t <$type>] [-o <$opts[0],$opts[1],...>] <$src> <$dest>
+    my @cmd = qw/mount/;
+    push @cmd, '-t', $type
+        if $type;
+    push @cmd, '-o', join ',', @opts
+        if @opts;
+    push @cmd, $src, $dest;
+
+    run_cmd(@cmd);
+
+    return $dest;
+}
+
+sub run_cmd {
+    my @argv = @_;
+    system(@argv) == 0
+        or die "failed to exec $argv[0]: $!";
+}
+
+sub extract_names {
+    my $name = shift || return;
+    my ($src, $dest) = split /:/, $name;
+    $dest ||= $src;
+
+    for ($src, $dest) {
+        file_name_is_absolute($_)
+            or die "$_ must be absolute";
+    }
+    return [$src, $dest];
+}
+
+sub copy {
+    my ($src, $dest) = @_;
+    run_cmd('cp', '-pH', $src, $dest); # follow symlink
+}
+
+sub copy_user_database {
+    my $root = shift || return;
+
+    copy($_, catfile($root, $_))
+        for (@{&USER_DATABASES});
+
+    # mask password
+    for my $shadow (qw|/etc/shadow /etc/gshadow|) {
+        my $shadow = catfile($root, $shadow);
+
+        open my $rfh, '<', $shadow
+            or die "failed to open $shadow: $!";
+        my @lines = <$rfh>;
+        close $rfh;
+
+        open my $wfh, '>', $shadow
+            or die "failed to open $shadow: $!";
+        for my $line (@lines) {
+            $line =~ s/\A([^:]+):[^*!:]+:/$1:*:/;
+            print $wfh $line;
+        }
+        close $wfh;
+    }
+}
+
+sub drop_caps {
+    my %keep_caps = map { $_ => 1 } @{&KEEP_CAPS};
+
+    my $i;
+    for ($i = 0; ; ++$i) {
+        next if $keep_caps{$i};
+
+        last if syscall(&SYS_prctl, 23, $i) < 0; # PR_CAPBSET_READ
+
+        if (syscall(&SYS_prctl, 24, $i) < 0) { # PR_CAPBSET_DROP
+            warn "failed to drop capability: $i";
+        }
+    }
+
+    # we should at least succeed in dropping _some_ capabilities
+    die "failed to drop capabilities: $!"
+        if $i == 0;
+}
+
+sub set_uidgid {
+    my $user = shift || return;
+
+    open my $fh, '<', '/etc/passwd'
+        or die "failed to open /etc/passwd: $!";
+
+    my ($uid, $gid);
+
+    while (<$fh>) {
+        chomp;
+        # see `man 5 passwd`.
+        # name:password:UID:GID:GECOS:directory:shell
+        #  0      1      2   3    4      5        6
+        my ($_name, $_uid, $_gid) = (split /:/, $_)[0, 2, 3];
+        if ($user eq $_uid || $user eq $_name) {
+            ($uid, $gid) = ($_uid, $_gid);
+        }
+    }
+
+    die "unable find user '$user'" if ! defined $uid;
+
+    # NOTICE: must set GID before set UID.
+    POSIX::setgid($gid);
+    POSIX::setuid($uid);
+}
+
+sub set_env {
+    for (@_) {
+        my ($var, $val) = split /=/, $_;
+        $ENV{$var} = $val;
+    }
+}
+
+main;
+
+__END__
+
+=head1 NAME
+
+aqr-run - alternative `docker run`
+
+=head1 SYNOPSIS
+
+    # create a root filesystem with docker.
+    docker export (docker create alpine hostname) | gzip > rootfs.tar.gz
+
+    # execute a command inside the rootfs.
+    sudo tar xzf rootfs.tar.gz -C /path/ro/rootfs
+    sudo aqr run /path/to/rootfs -- /bin/sh -l
+
+=head1 DESCRIPTION
+
+`aqr-run` is a easy container to run with chroot instead of `docker run`.
+
+=head1 OPTIONS
+
+=head2 -w, --cwd
+
+default: /
+
+working directory.
+
+=head2 -b, --bind src_path[:dest_path]
+
+default: []
+
+mount src_path of host to dest_path of the rootfs.
+
+=head2 -r, --robind src_path[:dest_path]
+
+default: []
+
+mount read-only src_path of host to dest_path of the rootfs.
+
+=head2 -c, --copy src_path[:dest_path]
+
+default: []
+
+copy src_path of host to dest_path of the rootfs.
+
+=head2 -e, --env var=val
+
+default: []
+
+set environment variables.
+
+=head2 -u, --user name|id
+
+default: 'root'
+
+usename or UID.
+
+=head2 -C, --cpu-shares weight
+
+default: 1024
+
+relative weight.
+
+=head2 -M, --memory size
+
+default: -1 (no limit)
+
+memory limit.
+
+256B, 256K, 256M, 256G.
+
+=head2 -R, --device-read-bps device:limit
+
+default: [] (no limit)
+
+limit read rate.
+
+/dev/sda:1048576
+
+=head2 -W, --device-write-bps device:limit
+
+default: [] (no limit)
+
+limit write rate.
+
+/dev/sda:10485760
+
+=head2 --no-drop-caps
+
+default: false
+
+give extended privileges to this container.
+
+=head2 --copy-user-database
+
+default: false
+
+copy '/etc/passwd', '/etc/shadow', '/etc/group', '/etc/gshadow' to container.
+
+=head2 -h, --help
+
+show help.
+
+=head1 AUTHOR
+
+hayajo E<lt>hayajo@cpan.orgE<gt>
+
+=head1 SEE ALSO
+
+L<https://github.com/yuuki/droot>
+L<https://github.com/kazuho/jailing>
+L<https://github.com/opencontainers/runc>
+L<https://github.com/opencontainers/runc/blob/master/libcontainer/SPEC.md>
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut
+
+# -*- mode: perl -*-
+# vi: set ft=perl :

@@ -1,0 +1,94 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use File::Spec::Functions qw/catfile catdir/;
+use Getopt::Long qw/:config no_ignore_case bundling/;
+use Pod::Usage qw/pod2usage/;
+
+our $VERSION = '0.01';
+
+use constant {
+    CGPREFIX => 'aqr-',
+    CGROOT   => '/sys/fs/cgroup',
+    CGSUBSYS => [qw/cpu memory blkio/],
+};
+
+sub main {
+    GetOptions(
+        'v|verbose' => \my $verbose,
+        'h|help'    => sub { pod2usage(0) },
+    ) or exit(1);
+
+    my $cgroot   = $ENV{AQR_CG_ROOT} || CGROOT;
+    my $cgprefix = $ENV{AQR_PREFIX}  || CGPREFIX;
+
+    for my $subsys (@{CGSUBSYS()}) {
+        my $subsys_dir = catdir($cgroot, $subsys);
+        opendir my $dh, $subsys_dir
+            or die "failed to opendir $subsys_dir: $!";
+
+        while (my $entry = readdir $dh) {
+            my $path = catfile($subsys_dir, $entry);
+
+            if ($entry =~ /^$cgprefix/ && -d $path) {
+                # size of the tasks file is zero.
+                # so must check the file always.
+                my @pids = do {
+                    my $tasks = catfile($path, 'tasks');
+                    open my $fh, '<', $tasks
+                        or die "failed to open $tasks: $!";
+                    (<$fh>);
+                };
+                next if @pids;
+
+                rmdir $path
+                    or warn "$path device or resource busy\n";
+                print "clean $path\n" if $verbose;
+            }
+        }
+
+        close $dh;
+    }
+}
+
+main;
+
+__END__
+
+=head1 NAME
+
+aqr-clean - cleanup cgroups
+
+=head1 SYNOPSIS
+
+    sudo aqr clean
+
+=head1 DESCRIPTION
+
+`aqr-clean` is a 
+
+=head1 OPTIONS
+
+=head2 -v, --verbose
+
+verbose messages.
+
+=head2 -h, --help
+
+show help.
+
+=head1 AUTHOR
+
+hayajo E<lt>hayajo@cpan.orgE<gt>
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut
+
+# -*- mode: perl -*-
+# vi: set ft=perl :
