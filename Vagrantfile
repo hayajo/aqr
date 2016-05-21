@@ -22,6 +22,19 @@ Vagrant.configure(2) do |config|
     SHELL
   end
 
+  config.vm.define "centos6" do |host|
+    host.vm.box = "boxcutter/centos67"
+    host.vm.hostname = "centos6"
+
+    host.vm.provision "shell", inline: <<-SHELL
+      sudo yum install -y perl perl-core libcgroup
+      chkcofnig cgcofnig on
+      chkcofnig cgred on
+      service cgconfig restart
+      service cgred restart
+    SHELL
+  end
+
   config.vm.define "centos" do |host|
     host.vm.box = "boxcutter/centos72"
     host.vm.hostname = "centos"
