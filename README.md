@@ -50,46 +50,55 @@ Vagrantを使った検証手順
 $ vagrant up
 ```
 
-### development環境でDockerイメージからファイルシステムアーカイブを作成する
+### docker環境でDockerイメージからファイルシステムアーカイブを作成する
 
 ```
-$ vagrant ssh development
+$ vagrant ssh docker
 ```
 
 コンテナイメージを`/vagrant/alpine-3.3.tar.gz`に作成します。
 
 ```
-development$ docker export $(docker create alpine cat /etc/alpine-release) | gzip > /vagrant/alpine-3.3.tar.gz # alpineのイメージはCOMMANDが指定されていないのでコマンドを指定する
-development$ exit
+docker$ docker export $(docker create alpine cat /etc/alpine-release) | gzip > /vagrant/alpine-3.3.tar.gz # alpineのイメージはCOMMANDが指定されていないのでコマンドを指定する
+docker$ exit
 ```
 
-### production環境でファイルシステムアーカイブを元にコンテナを起動する
+### コンテナ実行環境（centos6, centos, ubuntu, etc.）でファイルシステムアーカイブを元にコンテナを起動する
 
 ```
-$ vagrant ssh production
+$ vagrant ssh cnetos
 ```
 
 ルートファイルシステムを展開します。
 
 ```
-production$ sudo mkdir -p /var/container/alpine/3.3
-production$ sudo ln -s /var/container/alpine/3.3 /var/container/alpine/rootfs
-production$ sudo tar xzfv /vagrant/alpine-3.3.tar.gz -C /var/container/alpine/3.3
+centos$ sudo mkdir -p /var/container/alpine/3.3
+centos$ sudo ln -s /var/container/alpine/3.3 /var/container/alpine/rootfs
+centos$ sudo tar xzfv /vagrant/alpine-3.3.tar.gz -C /var/container/alpine/3.3
 ```
 
 展開したディレクトリを指定して`aqr run`コマンドを実行します。
 
 ```
-production$ sudo perl /vagrant/aqr run /var/container/alpine/rootfs -- /bin/sh -l
-production:/# apk update && apk add perl && perl -v
-production:/# exit
+centos$ sudo /vagrant/aqr run /var/container/alpine/rootfs -- /bin/sh -l
+centos:/# apk update && apk add perl && perl -v
+centos:/# ...
 ```
 
-[プロセスを終了すればマウントも解除される...はずです（汗](https://twitter.com/hayajo/status/723546798699094016)
-
-リソースの削除は（正常にアンマウントされているはずなので）プロセス終了後にディレクトリごと削除します。
+`aqr run`で実行したプロセスは`aqr list`で確認できます。
 
 ```
-$ sudo rm -rf /var/container/alpine/3.3
+centos$ sudo /vagrant/aqr list
 ```
 
+プロセス終了後、cgroupのグループが残るので`aqr clean`を実行して削除します。
+
+```
+centos$ sudo /vagrant/arq clean --verbose
+```
+
+ルートディレクトリはそのまま削除できます。不要な場合は`rm`で削除します。
+
+```
+centos$ sudo rm -rf /var/container/alpine/3.3
+```
