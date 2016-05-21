@@ -20,7 +20,7 @@ sub main {
         'h|help'    => sub { pod2usage(0) },
     ) or exit(1);
 
-    my $cgroot   = $ENV{AQR_CG_ROOT} || CGROOT;
+    my $cgroot   = $ENV{AQR_CGROOT} || CGROOT;
     my $cgprefix = $ENV{AQR_PREFIX}  || CGPREFIX;
 
     my %ps;

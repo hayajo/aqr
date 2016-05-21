@@ -100,7 +100,7 @@ sub main {
         if  syscall(&SYS_unshare, $flags) < 0;
 
     # cgroup
-    my $cgroot   = $ENV{AQR_CG_ROOT} || CGROOT;
+    my $cgroot   = $ENV{AQR_CGROOT} || CGROOT;
     my $cgprefix = $ENV{AQR_PREFIX}  || CGPREFIX;
     my $cgname   = $cgprefix . $$;
     cg_cpu($cgroot, $cgname, $opts->{cpu_shares});
