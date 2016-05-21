@@ -43,7 +43,7 @@ sub main {
                     my $line = <$fh>;
                     close $fh;
 
-                    chomp $line;
+                    chomp $line if $line;
                     $line;
                 };
 
