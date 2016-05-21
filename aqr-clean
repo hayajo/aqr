@@ -41,7 +41,11 @@ sub main {
                         or die "failed to open $tasks: $!";
                     (<$fh>);
                 };
-                next if @pids;
+
+                if (@pids) {
+                    print "busy $path\n" if $verbose;
+                    next;
+                }
 
                 rmdir $path
                     or warn "$path device or resource busy\n";
