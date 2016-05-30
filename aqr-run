@@ -95,7 +95,8 @@ sub main {
     die "$rootfs does not exists"
         if !$root || ! -e $root;
 
-    my $flags = 0x00020000; # CLONE_NEWNS
+    my $flags  = 0x00020000; # CLONE_NEWNS
+    $flags    |= 0x04000000; # CLONE_UTS
     die "failed to unshare mount"
         if  syscall(&SYS_unshare, $flags) < 0;
 
