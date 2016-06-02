@@ -8,6 +8,7 @@ require 'syscall.ph';
 use Cwd qw/abs_path/;
 use Errno ();
 use File::Basename qw/basename dirname/;
+use File::Temp qw/tempdir/;
 use File::Spec::Functions qw/catfile catdir file_name_is_absolute/;
 use Getopt::Long qw/:config no_ignore_case bundling/;
 use POSIX;
@@ -112,6 +113,7 @@ sub main {
     die "failed to private mount"
         if syscall(&SYS_mount, my $s = 'none', my $t = '/', 0, 0x4000 | 1 << 18, 0) < 0; # MS_REC|MS_PRIVATE
 
+    mount_proc($root);
     mount($_, catdir($root, $_), 'none', qw/rbind/)
         for qw|/proc /sys /dev|;
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
@@ -224,11 +226,28 @@ sub major_minor {
     return ($major, $minor);
 }
 
+sub mount_proc {
+    my $root = shift;
+
+    my $procdir    = catdir($root, 'proc');
+    my $ro_procdir = tempdir('.proc_XXXXXXXX', DIR => $root);
+
+    mount('proc', $procdir, 'proc', qw/rw nosuid nodev noexec relatime/);
+
+    # read-only mount
+    mount('proc', $ro_procdir, 'proc', qw/ro nosuid nodev noexec/);
+    mount(catdir($ro_procdir, $_), catdir($procdir, $_), 'none', qw/bind/)
+        for qw|sys sysrq-trigger irq bus|;
+
+    run_cmd('umount', '-l', $ro_procdir);
+    rmdir $ro_procdir;
+}
+
 sub mount {
     my ($src, $dest, $type, @opts) = @_;
 
     run_cmd(qw/mkdir -p -m 0755/, $dest)
-        if ! -e $dest;
+        if -d $src && ! -e $dest;
 
     # CMD: mount [-t <$type>] [-o <$opts[0],$opts[1],...>] <$src> <$dest>
     my @cmd = qw/mount/;
