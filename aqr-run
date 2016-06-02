@@ -110,7 +110,7 @@ sub main {
 
     # run_cmd(qw|mount --make-private /|); 
     die "failed to private mount"
-        if syscall(&SYS_mount, my $s = 'none', my $t = '/', 0, 1 << 18, 0) < 0; # MS_PRIVATE
+        if syscall(&SYS_mount, my $s = 'none', my $t = '/', 0, 0x4000 | 1 << 18, 0) < 0; # MS_REC|MS_PRIVATE
 
     mount($_, catdir($root, $_), 'none', qw/rbind/)
         for qw|/proc /sys /dev|;
