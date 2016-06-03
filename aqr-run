@@ -68,6 +68,7 @@ sub main {
         device_write_bps   => [],
         no_drop_caps       => 0,
         copy_user_database => 0,
+        simple_chroot      => 0,
     };
 
     GetOptions(
@@ -83,6 +84,7 @@ sub main {
         'W|device-write-bps=s@' => \$opts->{device_write_bps},
         'no-drop-caps'          => \$opts->{no_drop_caps},
         'copy-user-database'    => \$opts->{copy_user_database},
+        'simple-chroot'         => \$opts->{simple_chroot},
         'h|help'                => sub { pod2usage(0) },
     ) or exit(1);
 
@@ -115,7 +117,7 @@ sub main {
 
     mount_proc($root);
     mount($_, catdir($root, $_), 'none', qw/rbind/)
-        for qw|/proc /sys /dev|;
+        for qw|/sys /dev|;
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind/)
         for (map{ extract_names($_) } @{$opts->{bind}});
     mount($_->[0], catdir($root, $_->[1]), 'none', qw/bind ro remount/)
@@ -129,8 +131,27 @@ sub main {
     copy_user_database($root)
         if $opts->{copy_user_database};
 
-    chroot $root
-        or die "failed to chroot to $root: $!";
+    do {
+        ($opts->{simple_chroot} || system('which pivot_root >/dev/null 2>&1') != 0)
+        ? chroot $root
+        : do {
+            mount($root, $root, 'none', qw/rbind/);
+
+            chdir $root
+                or die "failed to chdir $root: $!";
+            my $oldroot = tempdir('.oldroot_XXXXXXXX');
+
+            run_cmd('pivot_root', '.', $oldroot);
+            chroot '.';
+
+            run_cmd('umount', '-l', "/$oldroot");
+            rmdir "/$oldroot"
+                or die "failed to rmdir /$oldroot: $!";
+
+            1;
+        };
+    } or die "failed to chroot to $root: $!";
+
     chdir $opts->{cwd}
         or die "failed to chdir to $opts->{cwd}: $!";
 
