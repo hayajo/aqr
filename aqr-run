@@ -131,26 +131,7 @@ sub main {
     copy_user_database($root)
         if $opts->{copy_user_database};
 
-    do {
-        ($opts->{simple_chroot} || system('which pivot_root >/dev/null 2>&1') != 0)
-        ? chroot $root
-        : do {
-            mount($root, $root, 'none', qw/rbind/);
-
-            chdir $root
-                or die "failed to chdir $root: $!";
-            my $oldroot = tempdir('.oldroot_XXXXXXXX');
-
-            run_cmd('pivot_root', '.', $oldroot);
-            chroot '.';
-
-            run_cmd('umount', '-l', "/$oldroot");
-            rmdir "/$oldroot"
-                or die "failed to rmdir /$oldroot: $!";
-
-            1;
-        };
-    } or die "failed to chroot to $root: $!";
+    change_root($root, $opts->{simple_chroot});
 
     chdir $opts->{cwd}
         or die "failed to chdir to $opts->{cwd}: $!";
@@ -329,6 +310,33 @@ sub copy_user_database {
         }
         close $wfh;
     }
+}
+
+sub change_root {
+    my ($root, $simple) = @_;
+
+    if ($simple || system('which pivot_root >/dev/null 2>&1') != 0) {
+        chroot $root
+            or die "failed to chroot to $root: $!";;
+        return;
+    }
+
+    # bind-mount same source and target to do `pivot_root`
+    mount($root, $root, 'none', qw/rbind/);
+
+    chdir $root
+        or die "failed to chdir $root: $!";
+
+    my $oldroot = tempdir('.oldroot_XXXXXXXX');
+    run_cmd('pivot_root', '.', $oldroot);
+
+    chroot '.'
+        or die "failed to chroot to .: $!";;
+
+    # cleanup
+    run_cmd('umount', '-l', "/$oldroot");
+    rmdir "/$oldroot"
+        or die "failed to rmdir /$oldroot: $!";
 }
 
 sub drop_caps {
