@@ -5,6 +5,8 @@ aqr(AQuaRium)
 
 `docker export`などで用意したルートファイルシステムを利用して、'chroot jail'のような隔離された環境でコマンドを実行します。
 
+ホストプロセスと連携させたい（Server::Starterなど）ので、プロセスツリーを壊さないように動作させています（forkしない）。
+
 下記の実装を参考にさせていただきました。
 
 * [yuuki/droot: Droot - A super-easy container with chroot without docker.](https://github.com/yuuki/droot)
@@ -94,7 +96,7 @@ centos$ sudo /vagrant/aqr list
 プロセス終了後、cgroupのグループが残るので`aqr clean`を実行して削除します。
 
 ```
-centos$ sudo /vagrant/arq clean --verbose
+centos$ sudo /vagrant/aqr clean --verbose
 ```
 
 ルートディレクトリはそのまま削除できます。不要な場合は`rm`で削除します。
