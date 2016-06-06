@@ -372,9 +372,12 @@ sub set_uidgid {
         # name:password:UID:GID:GECOS:directory:shell
         #  0      1      2   3    4      5        6
         my ($_name, $_uid, $_gid) = (split /:/, $_)[0, 2, 3];
-        if ($user eq $_uid || $user eq $_name) {
+        if ($user eq $_uid) {
             ($uid, $gid) = ($_uid, $_gid);
+            last;
         }
+        ($uid, $gid) = ($_uid, $_gid)
+            if $user eq $_name;
     }
 
     die "unable find user '$user'" if ! defined $uid;
