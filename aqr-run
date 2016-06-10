@@ -62,7 +62,7 @@ sub main {
         copy               => [],
         env                => [],
         user               => 'root',
-        cpu_shares         => 1024,
+        cpu_quota          => -1,
         memory_limit       => -1,
         device_read_bps    => [],
         device_write_bps   => [],
@@ -78,7 +78,7 @@ sub main {
         'c|copy=s@'             => \$opts->{copy},
         'e|env=s@'              => \$opts->{env},
         'u|user=s'              => \$opts->{user},
-        'C|cpu-shares=i'        => \$opts->{cpu_shares},
+        'C|cpu=i'               => \$opts->{cpu_quota},
         'M|memory=s'            => \$opts->{memory_limit},
         'R|device-read-bps=s@'  => \$opts->{device_read_bps},
         'W|device-write-bps=s@' => \$opts->{device_write_bps},
@@ -107,7 +107,7 @@ sub main {
     my $cgroot   = $ENV{AQR_CGROOT} || CGROOT;
     my $cgprefix = $ENV{AQR_PREFIX}  || CGPREFIX;
     my $cgname   = $cgprefix . $$;
-    cg_cpu($cgroot, $cgname, $opts->{cpu_shares});
+    cg_cpu($cgroot, $cgname, $opts->{cpu_quota} * 1000);
     cg_memory($cgroot, $cgname, $opts->{memory_limit});
     cg_blkio($cgroot, $cgname, $opts->{device_read_bps}, $opts->{device_write_bps});
 
@@ -151,11 +151,12 @@ sub main {
 
 sub cg_cpu {
     my ($cgroot, $cgname, $val) = @_;
+    $val = -1 if ($val < -1);
     write_cg_limit(
         $cgroot,
         $cgname,
         'cpu',
-        'cpu.shares' => $val,
+        'cpu.cfs_quota_us' => $val,
     );
 }
 
@@ -453,11 +454,13 @@ default: 'root'
 
 usename or UID.
 
-=head2 -C, --cpu-shares weight
+=head2 -C, --cpu quota
 
-default: 1024
+default: -1 (no limit)
 
-relative weight.
+cpu quota(%).
+
+10, 30, 50
 
 =head2 -M, --memory size
 
