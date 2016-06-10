@@ -167,8 +167,6 @@ sub write_cg_limit {
     my $tasks = catfile($group, 'tasks');
 
     if (-d $group) {
-        die "Device or resource busy"
-            if ! -z $tasks;
         rmdir $group
             or die "failed to rmdir $group: $!";
     }
