@@ -62,6 +62,7 @@ sub main {
         copy               => [],
         env                => [],
         user               => 'root',
+        name               => '',
         cpu_quota          => -1,
         memory_limit       => -1,
         device_read_bps    => [],
@@ -78,6 +79,7 @@ sub main {
         'c|copy=s@'             => \$opts->{copy},
         'e|env=s@'              => \$opts->{env},
         'u|user=s'              => \$opts->{user},
+        'n|name=s'              => \$opts->{name},
         'C|cpu=i'               => \$opts->{cpu_quota},
         'M|memory=s'            => \$opts->{memory_limit},
         'R|device-read-bps=s@'  => \$opts->{device_read_bps},
@@ -135,6 +137,9 @@ sub main {
 
     chdir $opts->{cwd}
         or die "failed to chdir to $opts->{cwd}: $!";
+
+    run_cmd('hostname', $opts->{name})
+        if $opts->{name};
 
     drop_caps()
         if ! $opts->{no_drop_caps};
