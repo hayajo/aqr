@@ -466,13 +466,13 @@ default: -1 (no limit)
 
 memory limit.
 
-256B, 256K, 256M, 256G.
+256B, 256K, 256M, 256G
 
 =head2 -R, --device-read-bps device:limit
 
 default: [] (no limit)
 
-limit read rate.
+limit read rate of each devices (byte/sec).
 
 /dev/sda:1048576
 
@@ -480,7 +480,7 @@ limit read rate.
 
 default: [] (no limit)
 
-limit write rate.
+limit write rate of each devices (byte/sec).
 
 /dev/sda:10485760
 
